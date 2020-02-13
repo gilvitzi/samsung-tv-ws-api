@@ -22,10 +22,12 @@ Copyright (C) 2019 Xchwarze
 import base64
 import json
 import logging
+import threading
 import time
 import ssl
 import websocket
 from . import shortcuts
+from .events import SimplePubSub
 
 _LOGGING = logging.getLogger(__name__)
 
@@ -43,6 +45,9 @@ class SamsungTVWS:
         self.key_press_delay = key_press_delay
         self.name = name
         self.connection = None
+        self.listen_thread = None
+        self.should_continue_listening = True
+        self.events = SimplePubSub()
 
     def __enter__(self):
         return self
@@ -120,12 +125,35 @@ class SamsungTVWS:
             self.close()
             raise Exception(response)
 
+    def start_listening(self):
+        self.listen_thread = threading.Thread(target=self._listen_to_messages_loop)
+        self.listen_thread.start()
+
+    def _listen_to_messages_loop(self):
+        if not self.connection:
+            self.open()
+
+        while self.connection and self.should_continue_listening:
+            raw_msg = None
+            try:
+                raw_msg = self.connection.recv()
+                response = json.loads(raw_msg)
+                print(response)
+                self.events.publish('*', response)
+
+            except ValueError as ex:
+                print("Error parsing message {}".format(raw_msg))
+            except Exception as ex:
+                print("Error reading message from TV")
+
     def close(self):
         if self.connection:
             self.connection.close()
 
         self.connection = None
         _LOGGING.debug('Connection closed.')
+
+        self.listen_thread.join()
 
     def send_key(self, key, repeat=1):
         for _ in range(repeat):
