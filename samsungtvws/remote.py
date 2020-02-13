@@ -22,10 +22,12 @@ Copyright (C) 2019 Xchwarze
 import base64
 import json
 import logging
+import threading
 import time
 import ssl
 import websocket
 from . import shortcuts
+from .simple_pub_sub import SimplePubSub
 
 _LOGGING = logging.getLogger(__name__)
 
@@ -43,6 +45,12 @@ class SamsungTVWS:
         self.key_press_delay = key_press_delay
         self.name = name
         self.connection = None
+        self._app_list = None
+        self._app_list_updated = False
+        self.listen_thread = None
+        self.should_continue_listening = True
+        self.events = SimplePubSub()
+        self.events.subscribe('ed.installedApp.get', self._handle_app_list_event)
 
     def __enter__(self):
         return self
@@ -89,6 +97,10 @@ class SamsungTVWS:
         else:
             _LOGGING.info('New token %s', token)
 
+    def _handle_app_list_event(self, new_app_list):
+        self._app_list = new_app_list.get('data').get('data')
+        self._app_list_updated = True
+
     def _ws_send(self, payload):
         if self.connection is None:
             self.open()
@@ -97,6 +109,10 @@ class SamsungTVWS:
         time.sleep(self.key_press_delay)
 
     def open(self):
+        if self.connection:
+            # someone else already created a new connection
+            return
+
         is_ssl = self._is_ssl_connection()
         url = self._format_websocket_url(is_ssl)
         sslopt = {'cert_reqs': ssl.CERT_NONE} if is_ssl else {}
@@ -120,12 +136,42 @@ class SamsungTVWS:
             self.close()
             raise Exception(response)
 
+        self._do_after_connect()
+        
+    def _start_listening(self):
+        self.listen_thread = threading.Thread(target=self._listen_to_messages_loop)
+        self.listen_thread.start()
+
+    def _listen_to_messages_loop(self):
+        if not self.connection:
+            self.open()
+
+        while self.connection and self.should_continue_listening:
+            raw_msg = None
+            try:
+                raw_msg = self.connection.recv()
+                msg = json.loads(raw_msg)
+                if 'event' in msg:
+                    topic = msg['event']
+                    data = msg
+                    self.events.publish(topic, data)
+                else:
+                    self.events.publish('*', msg)
+
+            except ValueError as ex:
+                print("Error parsing message %s. Error: %s", raw_msg, ex)
+            except Exception as ex:
+                print("Error reading message from TV. Error: %s", ex)
+                time.sleep(3)
+
     def close(self):
         if self.connection:
             self.connection.close()
 
         self.connection = None
         _LOGGING.debug('Connection closed.')
+
+        self.listen_thread.join()
 
     def send_key(self, key, repeat=1):
         for _ in range(repeat):
@@ -169,7 +215,7 @@ class SamsungTVWS:
             url
         )
 
-    def app_list(self):
+    def update_app_list(self):
         payload = json.dumps({
             'method': 'ms.channel.emit',
             'params': {
@@ -177,14 +223,22 @@ class SamsungTVWS:
                 'to': 'host'
             }
         })
-
-        _LOGGING.info('Get app list')
+        _LOGGING.info('request app list')
         self._ws_send(payload)
-        response = json.loads(self.connection.recv())
-        if response.get('data') and response.get('data').get('data'):
-            return response.get('data').get('data')
-        else:
-            return response
+
+    def app_list(self):
+        self._app_list_updated = False
+        self.update_app_list()
+
+        attemps_left = 10
+        while not self._app_list_updated and attemps_left:
+            time.sleep(1)
+            attemps_left -= 1
+
+        return self._app_list
 
     def shortcuts(self):
         return shortcuts.SamsungTVShortcuts(self)
+
+    def _do_after_connect(self):
+        self._start_listening()
