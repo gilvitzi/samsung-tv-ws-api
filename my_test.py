@@ -21,23 +21,25 @@ token_file = os.path.dirname(os.path.realpath(__file__)) + '/tv-token.txt'
 tv = SamsungTVWS(host='192.168.0.208', port=8002, token_file=token_file)
 
 def handle_message(msg):
+    print("======================================================")
     print(msg)
+    print("======================================================")
 
 def handle_app_list(msg):
-    print('APP LIST len = %s' % len(msg['data']['data']))
+    pass
+    #print('APP LIST len = %s' % len(msg['data']['data']))
 
 tv.events.subscribe('*', handle_message)
 tv.events.subscribe('ed.installedApp.get', handle_app_list)
 
 tv.shortcuts().power()
 
-app_list = tv.app_list()
+#app_list = tv.app_list()
 tv.shortcuts().power()
 tv.shortcuts().menu()
 tv.shortcuts().source()
 tv.shortcuts().source()
 # Toggle power
-
 
 #tv.shortcuts().power()
 
@@ -56,4 +58,4 @@ print(app_list)
 
 while True:
     time.sleep(1)
-    app_list = tv.app_list()
+    #app_list = tv.app_list()

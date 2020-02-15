@@ -27,7 +27,7 @@ import time
 import ssl
 import websocket
 from . import shortcuts
-from .events import SimplePubSub
+from .simple_pub_sub import SimplePubSub
 
 _LOGGING = logging.getLogger(__name__)
 
@@ -46,9 +46,11 @@ class SamsungTVWS:
         self.name = name
         self.connection = None
         self._app_list = None
+        self._app_list_updated = False
         self.listen_thread = None
         self.should_continue_listening = True
         self.events = SimplePubSub()
+        self.events.subscribe('ed.installedApp.get', self._set_app_list)
 
     def __enter__(self):
         return self
@@ -94,6 +96,10 @@ class SamsungTVWS:
                 token_file.write(token)
         else:
             _LOGGING.info('New token %s', token)
+
+    def _set_app_list(self, new_app_list):
+        self._app_list = new_app_list
+        self._app_list_updated = True
 
     def _ws_send(self, payload):
         if self.connection is None:
@@ -221,12 +227,13 @@ class SamsungTVWS:
         self._ws_send(payload)
 
     def app_list(self):
-        _LOGGING.info('Get app list')
-        if not self._app_list:
-            self.connect()
+        self._app_list_updated = False
+        self.update_app_list()
 
-            while not self._app_list():
-                time.sleep(2)
+        attemps_left = 10
+        while not self._app_list_updated and attemps_left:
+            time.sleep(1)
+            attemps_left -= 1
 
         return self._app_list
 

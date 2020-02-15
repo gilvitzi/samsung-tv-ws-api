@@ -1,26 +1,30 @@
 
 class ListenerEntry(object):
-    def __init__(self, callable, description):
+    def __init__(self, callable):
         super().__init__()
         self.callable = callable
-        self.description = description
 
 class SimplePubSub(object):
     def __init__(self):
         super().__init__()
         self.topics = {
-            '*': []
+            '*': set()
         }
     
-    def subscribe(self, topic, callable, description=None):
+    def subscribe(self, topic, callable):
         if topic not in self.topics:
-            self.topics[topic] = []
+            self.topics[topic] = set()
         
-        self.topics[topic].append(ListenerEntry(callable, description))
+        self.topics[topic].add(ListenerEntry(callable))
     
     def unsubscribe(self, topic, callable):
-        # Not Implemented
-        pass
+        if topic in self.topics:
+            listeners = self.topics[topic]
+            listeners.remove(callable)
+            if not len(listeners):
+                del self.topics[topic]
+        else:
+            raise ValueError("unsubscribe: topic does not exists")
 
     def publish(self, topic, data):
         self._publish(topic, {'topic': topic, 'data': data })
