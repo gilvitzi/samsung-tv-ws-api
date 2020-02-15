@@ -45,6 +45,7 @@ class SamsungTVWS:
         self.key_press_delay = key_press_delay
         self.name = name
         self.connection = None
+        self._app_list = None
         self.listen_thread = None
         self.should_continue_listening = True
         self.events = SimplePubSub()
@@ -96,12 +97,16 @@ class SamsungTVWS:
 
     def _ws_send(self, payload):
         if self.connection is None:
-            self.open()
+            self.connect()
 
         self.connection.send(payload)
         time.sleep(self.key_press_delay)
 
-    def open(self):
+    def connect(self):
+        if self.connection:
+            # someone else already created a new connection
+            return
+
         is_ssl = self._is_ssl_connection()
         url = self._format_websocket_url(is_ssl)
         sslopt = {'cert_reqs': ssl.CERT_NONE} if is_ssl else {}
@@ -125,26 +130,33 @@ class SamsungTVWS:
             self.close()
             raise Exception(response)
 
-    def start_listening(self):
+        self._do_after_connect()
+        
+    def _start_listening(self):
         self.listen_thread = threading.Thread(target=self._listen_to_messages_loop)
         self.listen_thread.start()
 
     def _listen_to_messages_loop(self):
         if not self.connection:
-            self.open()
+            self.connect()
 
         while self.connection and self.should_continue_listening:
             raw_msg = None
             try:
                 raw_msg = self.connection.recv()
-                response = json.loads(raw_msg)
-                print(response)
-                self.events.publish('*', response)
+                msg = json.loads(raw_msg)
+                if 'event' in msg:
+                    topic = msg['event']
+                    data = msg['data'] if 'data' in msg else None
+                    self.events.publish(topic, data)
+                else:
+                    self.events.publish('*', msg)
 
             except ValueError as ex:
-                print("Error parsing message {}".format(raw_msg))
+                print("Error parsing message %s. Error: %s", raw_msg, ex)
             except Exception as ex:
-                print("Error reading message from TV")
+                print("Error reading message from TV. Error: %s", ex)
+                time.sleep(3)
 
     def close(self):
         if self.connection:
@@ -197,7 +209,7 @@ class SamsungTVWS:
             url
         )
 
-    def app_list(self):
+    def update_app_list(self):
         payload = json.dumps({
             'method': 'ms.channel.emit',
             'params': {
@@ -205,14 +217,22 @@ class SamsungTVWS:
                 'to': 'host'
             }
         })
-
-        _LOGGING.info('Get app list')
+        _LOGGING.info('request app list')
         self._ws_send(payload)
-        response = json.loads(self.connection.recv())
-        if response.get('data') and response.get('data').get('data'):
-            return response.get('data').get('data')
-        else:
-            return response
+
+    def app_list(self):
+        _LOGGING.info('Get app list')
+        if not self._app_list:
+            self.connect()
+
+            while not self._app_list():
+                time.sleep(2)
+
+        return self._app_list
 
     def shortcuts(self):
         return shortcuts.SamsungTVShortcuts(self)
+
+    def _do_after_connect(self):
+        self._start_listening()
+        self.update_app_list()
