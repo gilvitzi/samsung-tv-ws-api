@@ -50,7 +50,7 @@ class SamsungTVWS:
         self.listen_thread = None
         self.should_continue_listening = True
         self.events = SimplePubSub()
-        self.events.subscribe('ed.installedApp.get', self._set_app_list)
+        self.events.subscribe('ed.installedApp.get', self._handle_app_list_event)
 
     def __enter__(self):
         return self
@@ -97,8 +97,8 @@ class SamsungTVWS:
         else:
             _LOGGING.info('New token %s', token)
 
-    def _set_app_list(self, new_app_list):
-        self._app_list = new_app_list
+    def _handle_app_list_event(self, new_app_list):
+        self._app_list = new_app_list.get('data').get('data')
         self._app_list_updated = True
 
     def _ws_send(self, payload):
@@ -153,7 +153,7 @@ class SamsungTVWS:
                 msg = json.loads(raw_msg)
                 if 'event' in msg:
                     topic = msg['event']
-                    data = msg['data'] if 'data' in msg else None
+                    data = msg
                     self.events.publish(topic, data)
                 else:
                     self.events.publish('*', msg)
@@ -242,4 +242,3 @@ class SamsungTVWS:
 
     def _do_after_connect(self):
         self._start_listening()
-        self.update_app_list()

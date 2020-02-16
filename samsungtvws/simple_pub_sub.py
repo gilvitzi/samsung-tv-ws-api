@@ -27,9 +27,9 @@ class SimplePubSub(object):
             raise ValueError("unsubscribe: topic does not exists")
 
     def publish(self, topic, data):
-        self._publish(topic, {'topic': topic, 'data': data })
+        self._publish(topic, data)
         if topic != '*':
-            self._publish('*', {'topic': topic, 'data': data })
+            self._publish('*', data)
     
     def _publish(self, topic, data):
         if topic in self.topics:
