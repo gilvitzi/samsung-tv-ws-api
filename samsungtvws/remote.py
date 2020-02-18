@@ -25,7 +25,9 @@ import logging
 import threading
 import time
 import ssl
-import websocket
+import websockets
+import asyncio
+
 from . import shortcuts
 from .simple_pub_sub import SimplePubSub
 
@@ -108,7 +110,7 @@ class SamsungTVWS:
         self.connection.send(payload)
         time.sleep(self.key_press_delay)
 
-    def connect(self):
+    async def connect(self):
         if self.connection:
             # someone else already created a new connection
             return
@@ -118,6 +120,8 @@ class SamsungTVWS:
         sslopt = {'cert_reqs': ssl.CERT_NONE} if is_ssl else {}
 
         _LOGGING.debug('WS url %s', url)
+
+
 
         self.connection = websocket.create_connection(
             url,

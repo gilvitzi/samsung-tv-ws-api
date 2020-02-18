@@ -1,9 +1,12 @@
+import ssl
 import sys
 import os
 import time
 import datetime
 
 import wakeonlan
+import websockets
+import asyncio
 
 sys.path.append('../')
 
@@ -16,6 +19,8 @@ ip_mac = get_mac_address(ip='192.168.0.208')
 print(ip_mac)
 
 wakeonlan.send_magic_packet(ip_mac)
+
+
 
 # Autosave token to file 
 token_file = os.path.dirname(os.path.realpath(__file__)) + '/tv-token.txt'
